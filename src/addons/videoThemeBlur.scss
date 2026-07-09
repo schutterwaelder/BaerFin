@@ -1,7 +1,0 @@
-/** @format */
-
-@use "../abstract/variables" as *;
-.videoPlayerContainer ~ #reactRoot .backgroundContainer.withBackdrop {
-	backdrop-filter: blur($filter-blur-default);
-	opacity: 1;
-}

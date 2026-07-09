@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Abyss Spotlight</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,300..700;1,17..18,300..700&display=swap"
+		rel="stylesheet" />
+	<link rel="stylesheet" href="spotlight.css" />
+</head>
+
+<body>
+
+	<div id="backdrop"><img id="backdrop-img" alt="" /></div>
+	<div id="content">
+		<img id="logo" alt="" />
+		<div id="title"></div>
+		<div id="episode-label"></div>
+		<div id="meta"></div>
+		<div id="progress-wrap" style="display:none">
+			<div id="progress-bar"></div>
+		</div>
+		<div id="plot"></div>
+		<div id="buttons"></div>
+	</div>
+	<div id="carousel-dots"></div>
+	<div id="clickzone"></div>
+	<div id="empty" style="display:none">Nothing to show</div>
+
+	<!-- Update notification -->
+	<div id="update-toast" style="display:none" role="status" aria-live="polite">
+		<div id="update-toast-inner">
+			<svg xmlns="http://www.w3.org/2000/svg" height="48px" viewBox="0 -960 960 960" width="48px"
+				fill="currentColor">
+				<path
+					d="M480-323.39 314.31-489.08l32.61-32.23 110.39 110V-780h45.38v368.69l110.39-110 32.61 32.23L480-323.39ZM237.69-180q-23.53 0-40.61-17.08T180-237.69V-363h45.39v125.31q0 4.61 3.84 8.46 3.85 3.84 8.46 3.84h484.62q4.61 0 8.46-3.84 3.84-3.85 3.84-8.46V-363H780v125.31q0 23.53-17.08 40.61T722.31-180H237.69Z" />
+			</svg>
+			<span id="update-text"></span>
+			<a id="update-link" href="#" target="_blank" rel="noopener noreferrer" id="update-link">View release</a>
+			<button id="update-dismiss" aria-label="Dismiss notification">
+				<svg xmlns="http://www.w3.org/2000/svg" height="14px" viewBox="0 -960 960 960" width="14px"
+					fill="currentColor">
+					<path
+						d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z" />
+				</svg>
+			</button>
+		</div>
+	</div>
+
+	<script>
+		// Version
+		// Updated automatically by the installer on each install/update.
+		// Format: matches GitHub release tag without the leading 'v', e.g. "1.2.1"
+		const ABYSS_SPOTLIGHT_VERSION = '1.2.1';
+
+		(async () => {
+			const $ = id => document.getElementById(id);
+
+			function getBaseUrl() {
+				try {
+					const loc = window.top.location;
+					const origin = `${loc.protocol}//${loc.host}`;
+					const match = loc.pathname.match(/^(.*?)\/web\b/);
+					const basePath = match ? match[1] : '';
+					return `${origin}${basePath}`;
+				} catch {
+					try {
+						const creds = JSON.parse(localStorage.getItem('jellyfin_credentials'));
+						const s = creds?.Servers?.[0];
+						return (s?.ManualAddress || s?.LocalAddress || s?.RemoteAddress || '').replace(/\/$/, '');
+					} catch { return ''; }
+				}
+			}
+
+			function getAuth() {
+				try {
+					const creds = JSON.parse(localStorage.getItem('jellyfin_credentials'));
+					const s = creds?.Servers?.[0];
+					return { token: s?.AccessToken, userId: s?.UserId };
+				} catch { return {}; }
+			}
+
+			function authHeaders(token) {
+				return { 'Authorization': `MediaBrowser Client="Jellyfin Web", Device="Abyss Spotlight", DeviceId="abyss-spotlight", Version="1.0", Token="${token}"` };
+			}
+
+			function formatRuntime(ticks) {
+				if (!ticks) return null;
+				const mins = Math.floor(ticks / 600000000);
+				if (mins < 60) return `${mins}m`;
+				const h = Math.floor(mins / 60), m = mins % 60;
+				return m > 0 ? `${h}h ${m}m` : `${h}h`;
+			}
+
+			function metaPillWithIcon(iconSvg, text) {
+				const span = document.createElement('span');
+				span.className = 'meta-pill';
+				span.innerHTML = `${iconSvg}<span>${text}</span>`;
+				return span;
+			}
+
+			function navigateTo(route) {
+				try { window.top.location.hash = route; }
+				catch { window.location.hash = route; }
+			}
+
+			async function fetchImageBlob(url, headers) {
+				try {
+					const res = await fetch(url, { headers });
+					if (!res.ok) return null;
+					return URL.createObjectURL(await res.blob());
+				} catch { return null; }
+			}
+
+			let zoomRAF = null;
+
+			function startZoom(imgEl, durationMs, fromScale, toScale) {
+				if (zoomRAF) cancelAnimationFrame(zoomRAF);
+				const start = performance.now();
+
+				// Randomize pan direction slightly (keeps consecutive zooms feeling distinct)
+				const angle = Math.random() * Math.PI * 2;
+				const panDistance = 1.5; // % of frame to drift, subtle
+				const panX = Math.cos(angle) * panDistance;
+				const panY = Math.sin(angle) * panDistance;
+
+				function tick(now) {
+					const elapsed = now - start;
+					const t = Math.min(elapsed / durationMs, 1);
+					const scale = fromScale + (toScale - fromScale) * t;
+					const x = panX * t;
+					const y = panY * t;
+					imgEl.style.transform = `scale(${scale}) translate(${x}%, ${y}%)`;
+					if (t < 1) {
+						zoomRAF = requestAnimationFrame(tick);
+					}
+				}
+				imgEl.style.transform = `scale(${fromScale}) translate(0%, 0%)`;
+				zoomRAF = requestAnimationFrame(tick);
+			}
+
+			// Version check
+			// Runs in background, shows toast only if a newer release exists.
+			// Respects a sessionStorage dismiss so it doesn't re-appear on SPA nav.
+
+			function semverGt(a, b) {
+				// Returns true if a > b, where a and b are "x.y.z" strings
+				const pa = a.split('.').map(Number);
+				const pb = b.split('.').map(Number);
+				for (let i = 0; i < 3; i++) {
+					if ((pa[i] || 0) > (pb[i] || 0)) return true;
+					if ((pa[i] || 0) < (pb[i] || 0)) return false;
+				}
+				return false;
+			}
+
+			async function checkForUpdate() {
+				const dismissKey = 'abyss-update-dismissed';
+				if (sessionStorage.getItem(dismissKey)) return;
+
+				try {
+					const res = await fetch(
+						'https://api.github.com/repos/AumGupta/abyss-jellyfin/releases/latest',
+						{ cache: 'no-store' }
+					);
+					if (!res.ok) return;
+					const data = await res.json();
+					const latest = (data.tag_name || '').replace(/^v/, '');
+					if (!latest || !semverGt(latest, ABYSS_SPOTLIGHT_VERSION)) return;
+
+					// Show toast
+					const toast = $('update-toast');
+					const textEl = $('update-text');
+					const linkEl = $('update-link');
+					const dismissEl = $('update-dismiss');
+
+					textEl.textContent = `Abyss v${latest} available, download and re-run the installer to update.`;
+					linkEl.href = data.html_url || `https://github.com/AumGupta/abyss-jellyfin/releases/tag/v${latest}`;
+
+					toast.style.display = 'flex';
+					// Trigger CSS transition
+					requestAnimationFrame(() => toast.classList.add('visible'));
+
+					dismissEl.addEventListener('click', () => {
+						toast.classList.remove('visible');
+						setTimeout(() => { toast.style.display = 'none'; }, 400);
+						sessionStorage.setItem(dismissKey, '1');
+					});
+				} catch {
+					// Silently ignore - network may be unavailable
+				}
+			}
+
+			const base = getBaseUrl();
+			const { token, userId } = getAuth();
+
+			if (!token || !userId) { $('empty').style.display = 'flex'; return; }
+
+			const headers = authHeaders(token);
+
+			const FIELDS = 'Overview,RunTimeTicks,UserData,OfficialRating,CommunityRating,SeriesName,SeriesId,ParentIndexNumber,IndexNumber,PlaybackPositionTicks';
+
+			async function fetchItems() {
+				let items = [];
+				try {
+					const [resumeRes, nextUpRes] = await Promise.all([
+						fetch(`${base}/Users/${userId}/Items/Resume?Limit=3&Recursive=true&Fields=${FIELDS}`, { headers }),
+						fetch(`${base}/Shows/NextUp?Limit=5&UserId=${userId}&Fields=${FIELDS}`, { headers })
+					]);
+					const resumeData = resumeRes.ok ? await resumeRes.json() : {};
+					const nextUpData = nextUpRes.ok ? await nextUpRes.json() : {};
+					items = [
+						...(resumeData.Items || []).map(i => ({ ...i, _source: 'resume' })),
+						...(nextUpData.Items || []).map(i => ({ ...i, _source: 'nextup' }))
+					];
+					// De-duplicate by Id
+					items = items.filter((item, idx, self) => idx === self.findIndex(t => t.Id === item.Id));
+				} catch (e) { console.error('[Abyss Spotlight] fetch error:', e); }
+
+				// Fallback: random movies/shows when queue is empty
+				if (items.length === 0) {
+					try {
+						const fallbackRes = await fetch(
+							`${base}/Users/${userId}/Items?Limit=8&Recursive=true&SortBy=Random&IncludeItemTypes=Movie,Series&Fields=${FIELDS}`,
+							{ headers }
+						);
+						if (fallbackRes.ok) {
+							const d = await fallbackRes.json();
+							items = (d.Items || []).map(i => ({ ...i, _source: 'random' }));
+						}
+					} catch (e) { console.error('[Abyss Spotlight] fallback fetch error:', e); }
+				}
+
+				return items;
+			}
+
+			let items = [];
+			let currentIndex = 0;
+			let autoTimer = null;
+			const AUTO_INTERVAL = 5000;
+
+			function startAuto() {
+				stopAuto();
+				if (items.length <= 1) return;
+				autoTimer = setInterval(() => {
+					currentIndex = (currentIndex + 1) % items.length;
+					renderItem(currentIndex);
+				}, AUTO_INTERVAL);
+			}
+
+			function stopAuto() {
+				if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+			}
+
+			// --- TOUCH SWIPE LOGIC START ---
+			let touchStartX = 0;
+			let touchEndX = 0;
+
+			function handleSwipe() {
+				const swipeThreshold = 50; // Minimum pixel distance for a valid swipe
+
+				if (touchEndX < touchStartX - swipeThreshold) {
+					// Swiped Left -> Next item
+					stopAuto();
+					currentIndex = (currentIndex + 1) % items.length;
+					renderItem(currentIndex);
+					startAuto();
+				} else if (touchEndX > touchStartX + swipeThreshold) {
+					// Swiped Right -> Previous item
+					stopAuto();
+					// Using `+ items.length` ensures we don't get negative values when wrapping around backwards
+					currentIndex = (currentIndex - 1 + items.length) % items.length;
+					renderItem(currentIndex);
+					startAuto();
+				}
+			}
+
+			document.addEventListener('touchstart', e => {
+				touchStartX = e.changedTouches[0].screenX;
+			}, { passive: true });
+
+			document.addEventListener('touchend', e => {
+				touchEndX = e.changedTouches[0].screenX;
+				handleSwipe();
+			}, { passive: true });
+			// --- TOUCH SWIPE LOGIC END ---
+
+			function buildDots() {
+				const container = $('carousel-dots');
+				container.innerHTML = '';
+				if (items.length <= 1) { container.style.display = 'none'; return; }
+				container.style.display = 'flex';
+				items.forEach((_, i) => {
+					const dot = document.createElement('button');
+					dot.className = 'dot';
+					dot.setAttribute('aria-label', `Item ${i + 1}`);
+					dot.addEventListener('click', e => {
+						e.stopPropagation();
+						stopAuto();
+						currentIndex = i;
+						renderItem(i);
+						startAuto();
+					});
+					container.appendChild(dot);
+				});
+				updateDots();
+			}
+
+			function updateDots() {
+				const dots = [...$('carousel-dots').querySelectorAll('.dot')];
+				dots.forEach((dot, i) => {
+					const dist = Math.abs(i - currentIndex);
+					dot.className = 'dot' + (
+						dist === 0 ? ' dot-active' :
+							dist === 1 ? ' dot-near' :
+								dist === 2 ? ' dot-far' : ' dot-hidden'
+					);
+				});
+			}
+
+			async function renderItem(index) {
+				const item = items[index];
+				if (!item) return;
+
+
+				$('content').style.transform = 'translateY(10px)';
+				$('content').style.opacity = '0';
+				$('backdrop').style.opacity = '0';
+				$('backdrop').classList.remove('loaded');
+				$('content').classList.remove('visible');
+				updateDots();
+				await new Promise(r => setTimeout(r, 400));
+
+
+				const isEp = item.Type === 'Episode';
+				const logoId = isEp ? (item.SeriesId || item.Id) : item.Id;
+				const detailId = isEp ? (item.SeriesId || item.Id) : item.Id;
+				const detailRoute = `/details?id=${detailId}`;
+				const playRoute = `/video?id=${item.Id}`;
+
+				// Backdrop
+				const backdropImgEl = $('backdrop-img');
+				const backdropEl = $('backdrop');
+				const primaryUrl = `${base}/Items/${item.Id}/Images/Primary?quality=90`;
+				const backdropUrl = `${base}/Items/${isEp ? (item.SeriesId || item.Id) : item.Id}/Images/Backdrop/0?quality=90`;
+
+				let backdropBlob = null;
+				if (isEp) {
+					backdropBlob = await fetchImageBlob(primaryUrl, headers);
+					backdropImgEl.style.objectPosition = 'center center';
+					if (!backdropBlob) {
+						backdropBlob = await fetchImageBlob(backdropUrl, headers);
+						backdropImgEl.style.objectPosition = 'center 20%';
+					}
+				} else {
+					backdropBlob = await fetchImageBlob(backdropUrl, headers);
+					backdropImgEl.style.objectPosition = 'center 20%';
+				}
+
+				if (backdropBlob) {
+					backdropImgEl.onload = () => {
+						backdropEl.classList.add('loaded');
+						startZoom(backdropImgEl, 9000, 1, 1.08);
+					};
+					backdropImgEl.src = backdropBlob;
+				} else {
+					backdropEl.classList.add('loaded');
+				}
+
+				// Logo / title
+				const logoEl = $('logo');
+				const titleEl = $('title');
+				const logoBlobUrl = await fetchImageBlob(`${base}/Items/${logoId}/Images/Logo?quality=90`, headers);
+				if (logoBlobUrl) {
+					logoEl.src = logoBlobUrl;
+					logoEl.style.display = 'block';
+					titleEl.style.display = 'none';
+				} else {
+					logoEl.style.display = 'none';
+					titleEl.style.display = 'block';
+					titleEl.textContent = isEp ? item.SeriesName : item.Name;
+				}
+
+				// Episode label
+				let episodePrefix = '';
+				const episodeLabelEl = $('episode-label');
+				if (isEp) {
+					const parts = [];
+					if (item.ParentIndexNumber != null && item.IndexNumber != null) {
+						episodePrefix = `S${item.ParentIndexNumber} E${item.IndexNumber}`;
+						parts.push(episodePrefix);
+					}
+					if (item.Name) parts.push(item.Name);
+					episodeLabelEl.textContent = parts.join('  \u2013  ');
+					episodeLabelEl.style.display = 'block';
+				} else {
+					episodeLabelEl.textContent = '';
+					episodeLabelEl.style.display = 'none';
+				}
+
+				// Buttons
+				const buttonsEl = $('buttons');
+				buttonsEl.innerHTML = '';
+
+				const playBtn = document.createElement('button');
+				playBtn.className = 'btn btn-play';
+				const isResume = item._source === 'resume';
+				const btnLabel = isResume
+					? (isEp ? `Continue ${episodePrefix}` : 'Resume')
+					: (isEp ? `Play ${episodePrefix}`.trim() : 'Play');
+				playBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M320-273v-414q0-17 12-28.5t28-11.5q5 0 10.5 1.5T381-721l326 207q9 6 13.5 15t4.5 19q0 10-4.5 19T707-446L381-239q-5 3-10.5 4.5T360-233q-16 0-28-11.5T320-273Z"/></svg>${btnLabel}`;
+
+				playBtn.onclick = e => {
+					e.preventDefault();
+					try {
+						const parentDoc = window.top.document;
+						// Try resume then play action buttons first
+						const actionBtn = parentDoc.querySelector(
+							`[data-id="${item.Id}"][data-action="resume"],` +
+							`[data-id="${item.Id}"] [data-action="resume"],` +
+							`[data-id="${item.Id}"][data-action="play"],` +
+							`[data-id="${item.Id}"] [data-action="play"]`
+						);
+						if (actionBtn) { actionBtn.click(); return; }
+						// Fallback: click the card
+						const card = parentDoc.querySelector(`[data-id="${item.Id}"]`);
+						if (card) { card.click(); return; }
+					} catch (err) {
+						console.warn('[Abyss Spotlight] Could not trigger playback:', err);
+					}
+					// Final fallback: navigate via hash
+					navigateTo(playRoute);
+				};
+				buttonsEl.appendChild(playBtn);
+
+				const infoBtn = document.createElement('a');
+				infoBtn.className = 'btn btn-info';
+				infoBtn.href = '#';
+				infoBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M423.5-703.5Q400-727 400-760t23.5-56.5Q447-840 480-840t56.5 23.5Q560-793 560-760t-23.5 56.5Q513-680 480-680t-56.5-23.5Zm14 566Q420-155 420-180v-360q0-25 17.5-42.5T480-600q25 0 42.5 17.5T540-540v360q0 25-17.5 42.5T480-120q-25 0-42.5-17.5Z"/></svg>`;
+				infoBtn.onclick = e => { e.preventDefault(); navigateTo(detailRoute); };
+				buttonsEl.appendChild(infoBtn);
+
+				// Meta pills
+				const metaEl = $('meta');
+				metaEl.innerHTML = '';
+				const SVG_RATING = `<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#e3e3e3"><path d="M168-144q-29 0-50.5-21.5T96-216v-528q0-29.7 21.5-50.85Q139-816 168-816h624q29 0 50.5 21.15T864-744v528q0 29-21.5 50.5T792-144H168Zm337.5-154.35Q516-308.7 516-324v-168q0-15.3-10.29-25.65Q495.42-528 480.21-528t-25.71 10.35Q444-507.3 444-492v168q0 15.3 10.29 25.65Q464.58-288 479.79-288t25.71-10.35ZM480-600q14 0 25-11t11-25.5q0-14.5-11-25T479.5-672q-14.5 0-25 10.35T444-636q0 14 10.35 25T480-600ZM168-228h72v-72h-72v72Zm552 0h72v-72h-72v72ZM168-372h72v-72h-72v72Zm552 0h72v-72h-72v72ZM168-516h72v-72h-72v72Zm552 0h72v-72h-72v72ZM168-660h72v-72h-72v72Zm552 0h72v-72h-72v72Z"/></svg>`;
+				const SVG_CLOCK = `<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#e3e3e3"><path d="M516-510v-174q0-15.3-10.29-25.65Q495.42-720 480.21-720t-25.71 10.35Q444-699.3 444-684v189q0 8 3 14.5t8 11.5l133.85 133.85Q600-324 614.5-324.5 629-325 640-336t11-25.5q0-14.5-11.34-25.75L516-510ZM480-96q-79.38 0-149.19-30T208.5-208.5Q156-261 126-330.96t-30-149.5Q96-560 126-630q30-70 82.5-122t122.46-82q69.96-30 149.5-30t149.55 30.24q70 30.24 121.79 82.08 51.78 51.84 81.99 121.92Q864-559.68 864-480q0 79.38-30 149.19T752-208.5Q700-156 629.87-126T480-96Z"/></svg>`;
+				const SVG_STAR = `<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#e3e3e3"><path d="m480-285-164 98q-11 6-21.5 5t-18.5-7q-8-6-12-16.5t-1-21.5l43-183-145-123q-9-8-11-18.5t1-20.5q3-10 11-16.5t20-7.5l190-17 75-174q5-11 14-16.5t19-5.5q10 0 19 5.5t14 16.5l75 175 190 16q12 1 20 8t11 17q3 10 .5 20T798-533L654-410l43 183q3 11-1 21.5T684-189q-8 6-18.5 7t-21.5-5l-164-98Z"/></svg>`;
+
+				if (item.OfficialRating) metaEl.appendChild(metaPillWithIcon(SVG_RATING, item.OfficialRating));
+				const rt = formatRuntime(item.RunTimeTicks);
+				if (rt) metaEl.appendChild(metaPillWithIcon(SVG_CLOCK, rt));
+				if (item.CommunityRating) metaEl.appendChild(metaPillWithIcon(SVG_STAR, item.CommunityRating.toFixed(1)));
+
+				// Progress bar; only for resume items
+				const played = item.UserData?.PlayedPercentage;
+				if (played && played > 0 && isResume) {
+					$('progress-wrap').style.display = 'block';
+					$('progress-bar').style.width = `${Math.min(played, 100)}%`;
+				} else {
+					$('progress-wrap').style.display = 'none';
+				}
+
+
+				$('plot').textContent = item.Overview || '';
+				$('clickzone').onclick = () => navigateTo(detailRoute);
+
+				$('content').style.transform = '';
+				$('content').style.opacity = '';
+				$('backdrop').style.opacity = '';
+				$('backdrop').classList.add('loaded');
+				$('content').classList.add('visible');
+			}
+
+			// Boot
+			// Version check runs in background - never blocks the main render
+			checkForUpdate();
+
+			items = await fetchItems();
+			if (!items.length) { $('empty').style.display = 'flex'; return; }
+			buildDots();
+			await renderItem(0);
+			startAuto();
+
+		})();
+	</script>
+</body>
+
+</html>
