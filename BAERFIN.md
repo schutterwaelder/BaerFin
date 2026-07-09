@@ -60,26 +60,29 @@ Das offizielle `jellyfin/jellyfin`-Image hat **keinen** `custom-cont-init.d`-Hoo
 Deshalb läuft der Patch über einen **entrypoint-Wrapper**, der die UI patcht und
 dann Jellyfin normal startet.
 
-1. **Spotlight-Dateien auf den Host legen** (aus diesem Repo), z. B.:
-   ```bash
-   # auf der Synology, einmalig:
-   git clone https://github.com/schutterwaelder/BaerFin.git /tmp/baerfin
-   mkdir -p "/volume1/Media Libary/Jellyfin/abyss"
-   cp -r /tmp/baerfin/spotlight/* "/volume1/Media Libary/Jellyfin/abyss/"
-   ```
-   Der Host-Ordner enthält danach `ui/` **und** `apply-spotlight.sh`.
+**Ist auf der DS918+ bereits deployed** (2026-07-09). Setup dort:
+`abyss/`-Ordner liegt neben der Compose unter `/volume1/docker/jellyfin/abyss/`,
+Compose-Projekt unter `/volume1/docker/jellyfin/compose.yaml` (Container-Manager),
+Web-Dir im Container `/jellyfin/jellyfin-web`. Zum Neu-Ausrollen:
 
-2. **Compose ergänzen** (steht schon in der Infra-Compose):
+1. **Spotlight-Dateien auf den Host legen** (Inhalt von `spotlight/` aus diesem Repo)
+   nach `/volume1/docker/jellyfin/abyss/` — enthält danach `ui/` **und**
+   `apply-spotlight.sh`. (Synology-SSH hat kein SFTP-Subsystem → Upload via
+   `base64` über den Exec-Kanal, oder Dateien im Container Manager / File Station ablegen.)
+
+2. **Compose ergänzen** (`/volume1/docker/jellyfin/compose.yaml`):
    ```yaml
    services:
      jellyfin:
        entrypoint: ["/bin/bash", "-c", "bash /abyss/apply-spotlight.sh; exec /jellyfin/jellyfin"]
        volumes:
-         - "/volume1/Media Libary/Jellyfin/abyss:/abyss:ro"
+         - "/volume1/docker/jellyfin/abyss:/abyss:ro"
    ```
 
-3. **Neu starten:** `docker compose up -d` (bzw. im Synology Container Manager
-   „Projekt" neu aufbauen). Im Log muss `**** [baerfin] ... angewendet ****` stehen.
+3. **Neu starten:** `docker-compose -f /volume1/docker/jellyfin/compose.yaml up -d`
+   (Synology hat `docker-compose`, nicht `docker compose`). Im Log muss
+   `**** [baerfin] ... angewendet ****` stehen. Rollback: `compose.yaml.baerfin.bak`
+   zurückkopieren, `up -d`.
 
 4. Startseite öffnen → Banner sollte oben erscheinen. Falls nicht: Abschnitt
    „Fehlersuche" unten.

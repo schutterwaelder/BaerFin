@@ -5,7 +5,7 @@
 # "VPS-und-Server-Config/Synology NAS (DS918+)/Jellyfin/docker-compose.yml".
 #
 # Voraussetzung: den Inhalt des Repo-Ordners spotlight/ auf den Host legen,
-# z. B. nach /volume1/Media Libary/Jellyfin/abyss/ (siehe README).
+# z. B. nach /volume1/docker/jellyfin/abyss/ (siehe README).
 
 services:
   jellyfin:
@@ -13,4 +13,4 @@ services:
     entrypoint: ["/bin/bash", "-c", "bash /abyss/apply-spotlight.sh; exec /jellyfin/jellyfin"]
     volumes:
       # (2) spotlight/-Inhalt read-only in den Container mounten
-      - "/volume1/Media Libary/Jellyfin/abyss:/abyss:ro"
+      - "/volume1/docker/jellyfin/abyss:/abyss:ro"
