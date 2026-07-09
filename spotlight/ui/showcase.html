@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>BaerFin Highlights</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap"
+		rel="stylesheet" />
+	<style>
+		:root { --radius: 12px; }
+		* { box-sizing: border-box; }
+		html, body { margin: 0; padding: 0; background: transparent; }
+		body { font-family: 'Google Sans', system-ui, sans-serif; color: #f2f2f2; overflow: hidden; }
+		#wrap { padding: 0.2em 0 0.6em; }
+		#head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 0.6em; padding: 0 3.3vw; }
+		#title { font-size: 1.3rem; font-weight: 600; letter-spacing: .2px; }
+		#nav { display: flex; gap: .4em; }
+		.arrow { width: 34px; height: 34px; border: 0; border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; display: grid; place-items: center; transition: background .15s; }
+		.arrow:hover { background: rgba(255,255,255,.24); }
+		#track { display: flex; gap: 0.9em; overflow-x: auto; scroll-behavior: smooth; padding: 0 3.3vw 0.4em; scroll-snap-type: x proximity; scrollbar-width: none; }
+		#track::-webkit-scrollbar { display: none; }
+		.lcard { flex: 0 0 auto; width: 320px; scroll-snap-align: start; cursor: pointer; }
+		@media (max-width: 700px) { .lcard { width: 240px; } #title { font-size: 1.1rem; } }
+		.thumb {
+			position: relative; width: 100%; aspect-ratio: 16/9; border-radius: var(--radius);
+			overflow: hidden; background: #141414; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+			transition: transform .2s ease, box-shadow .2s ease;
+		}
+		.lcard:hover .thumb, .lcard:focus-visible .thumb { transform: scale(1.045); box-shadow: 0 10px 26px rgba(0,0,0,.6); }
+		.thumb .bg { width: 100%; height: 100%; object-fit: cover; display: block; }
+		.thumb .ph { width: 100%; height: 100%; display: grid; place-items: center; color: #555; font-size: 2rem; background: #141414; }
+		.thumb .scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.75) 0%, rgba(0,0,0,.15) 45%, rgba(0,0,0,.05) 100%); }
+		.thumb .logo { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); max-width: 66%; max-height: 42%; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.7)); }
+		.thumb .ltitle { position: absolute; left: 0; right: 0; bottom: 10%; text-align: center; padding: 0 8%; font-size: 1.15rem; font-weight: 700; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+		.cap { margin: .5em .1em 0; font-size: .82rem; color: #9a9a9a; }
+	</style>
+</head>
+
+<body>
+	<div id="wrap">
+		<div id="head">
+			<div id="title">Zufällige Highlights</div>
+			<div id="nav">
+				<button class="arrow" id="prev" aria-label="Zurück"><svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg></button>
+				<button class="arrow" id="next" aria-label="Weiter"><svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor"><path d="m400-240-56-56 184-184-184-184 56-56 240 240-240 240Z"/></svg></button>
+			</div>
+		</div>
+		<div id="track"></div>
+	</div>
+
+	<script>
+		(async () => {
+			const $ = id => document.getElementById(id);
+			function getBaseUrl() {
+				try {
+					const loc = window.top.location;
+					const match = loc.pathname.match(/^(.*?)\/web\b/);
+					return `${loc.protocol}//${loc.host}${match ? match[1] : ''}`;
+				} catch {
+					try { const c = JSON.parse(localStorage.getItem('jellyfin_credentials')); const s = c?.Servers?.[0];
+						return (s?.ManualAddress || s?.LocalAddress || s?.RemoteAddress || '').replace(/\/$/, ''); } catch { return ''; }
+				}
+			}
+			function getAuth() {
+				try { const c = JSON.parse(localStorage.getItem('jellyfin_credentials')); const s = c?.Servers?.[0];
+					return { token: s?.AccessToken, userId: s?.UserId }; } catch { return {}; }
+			}
+			function navigateTo(route) { try { window.top.location.hash = route; } catch { window.location.hash = route; } }
+			function report() {
+				try { parent.postMessage({ baerfinSuggest: { empty: !$('track').children.length, height: document.body.scrollHeight } }, '*'); } catch {}
+			}
+			const esc = s => (s || '').replace(/</g, '&lt;');
+
+			const base = getBaseUrl();
+			const { token, userId } = getAuth();
+			if (!token || !userId) { report(); return; }
+
+			// Zufaellige, ungesehene Filme/Serien MIT Backdrop-Bild (Querformat)
+			let items = [];
+			try {
+				const res = await fetch(
+					`${base}/Users/${userId}/Items?Limit=30&Recursive=true&SortBy=Random&Filters=IsUnplayed&IncludeItemTypes=Movie,Series&ImageTypes=Backdrop&Fields=ProductionYear&EnableImageTypes=Backdrop,Logo`,
+					{ headers: { 'Authorization': `MediaBrowser Client="Jellyfin Web", Device="BaerFin Showcase", DeviceId="baerfin-showcase", Version="1.0", Token="${token}"` } }
+				);
+				if (res.ok) items = ((await res.json()).Items || []).filter(i => i.BackdropImageTags && i.BackdropImageTags.length);
+			} catch (e) { console.error('[BaerFin Showcase] fetch error:', e); }
+
+			items = items.slice(0, 18);
+			const track = $('track');
+			for (const item of items) {
+				const card = document.createElement('div');
+				card.className = 'lcard'; card.tabIndex = 0;
+				const bg = `${base}/Items/${item.Id}/Images/Backdrop/0?fillWidth=640&quality=90&api_key=${token}`;
+				const hasLogo = item.ImageTags && item.ImageTags.Logo;
+				const logo = `${base}/Items/${item.Id}/Images/Logo?fillHeight=130&quality=90&api_key=${token}`;
+				const overlay = hasLogo
+					? `<img class="logo" alt="" src="${logo}" onerror="this.remove()">`
+					: `<div class="ltitle">${esc(item.Name)}</div>`;
+				card.innerHTML =
+					`<div class="thumb">` +
+						`<img class="bg" loading="lazy" alt="" src="${bg}" onerror="this.parentNode.innerHTML='<div class=\\'ph\\'>&#127916;</div>'">` +
+						`<div class="scrim"></div>${overlay}` +
+					`</div>` +
+					`<div class="cap">${item.Type === 'Series' ? 'Serie' : 'Film'}${item.ProductionYear ? ' · ' + item.ProductionYear : ''}</div>`;
+				const go = () => navigateTo(`#/details?id=${item.Id}`);
+				card.addEventListener('click', go);
+				card.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+				track.appendChild(card);
+			}
+
+			const scrollBy = dir => track.scrollBy({ left: dir * Math.round(track.clientWidth * 0.8), behavior: 'smooth' });
+			$('prev').addEventListener('click', () => scrollBy(-1));
+			$('next').addEventListener('click', () => scrollBy(1));
+
+			report();
+			window.addEventListener('load', report);
+			setTimeout(report, 800);
+		})();
+	</script>
+</body>
+
+</html>

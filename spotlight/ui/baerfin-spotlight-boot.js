@@ -12,12 +12,17 @@
   var STYLE_ID = "baerfin-spotlight-style";
   var FLAG = "baerfinSpotlight";
 
-  // --- Vorschlaege-Reihe (Netflix-Stil, zwischen den Home-Zeilen) ---
+  // --- Zusatz-Reihen zwischen den Home-Zeilen (Netflix-Stil) ---
   var SUGGEST_STYLE_ID = "baerfin-suggest-style";
-  var SUGGEST_INDEX = 1;        // nach welcher Home-Zeile die Reihe erscheint (0 = ganz oben)
   var suggestFrames = [];       // iframe-Referenzen fuer Groessen/Ausblenden per postMessage
+  // nativeIndex = vor welcher NATIVEN Jellyfin-Zeile die Reihe erscheint
+  // (0-basiert; eigene Reihen zaehlen NICHT mit).
+  var EXTRA_ROWS = [
+    { id: "suggest",  src: "ui/suggestions.html", nativeIndex: 1 },
+    { id: "showcase", src: "ui/showcase.html",    nativeIndex: 2 }
+  ];
 
-  // Auto-Hoehe / Ausblenden anhand der Meldungen aus suggestions.html
+  // Auto-Hoehe / Ausblenden anhand der Meldungen aus den Reihen-iframes
   window.addEventListener("message", function (ev) {
     var d = ev && ev.data && ev.data.baerfinSuggest;
     if (!d) return;
@@ -40,28 +45,54 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
-  // Fuegt die Vorschlaege-Reihe als Kind von .sections an Position SUGGEST_INDEX ein
-  // und stellt sie nach einem Jellyfin-Re-Render selbst wieder her (self-healing).
-  function enhanceSuggestions(homeTab) {
+  // native (nicht von uns injizierte) Home-Zeilen
+  function nativeSections(sections) {
+    var out = [];
+    for (var i = 0; i < sections.children.length; i++) {
+      var ch = sections.children[i];
+      if (!ch.classList || !ch.classList.contains("baerfin-suggest")) out.push(ch);
+    }
+    return out;
+  }
+
+  // Fuegt alle EXTRA_ROWS zwischen die nativen Home-Zeilen ein und stellt sie
+  // nach einem Jellyfin-Re-Render selbst wieder her (self-healing).
+  function enhanceRows(homeTab) {
     var sections = homeTab.querySelector(".sections");
     if (!sections) return;
     injectSuggestStyleOnce();
-    var ensure = function () {
-      if (sections.querySelector(":scope > .baerfin-suggest")) return;
-      var wrap = document.createElement("div");
-      wrap.className = "baerfin-suggest";
-      var iframe = document.createElement("iframe");
-      iframe.src = "ui/suggestions.html";
-      iframe.setAttribute("scrolling", "no");
-      wrap.appendChild(iframe);
-      suggestFrames.push(iframe);
-      var kids = sections.children;
-      var idx = Math.min(SUGGEST_INDEX, kids.length);
-      if (kids[idx]) sections.insertBefore(wrap, kids[idx]);
-      else sections.appendChild(wrap);
-    };
-    ensure();
-    new MutationObserver(ensure).observe(sections, { childList: true });
+    EXTRA_ROWS.forEach(function (cfg) {
+      var sel = '[data-baerfin-row="' + cfg.id + '"]';
+      var build = function () {
+        var wrap = document.createElement("div");
+        wrap.className = "baerfin-suggest";
+        wrap.setAttribute("data-baerfin-row", cfg.id);
+        var iframe = document.createElement("iframe");
+        iframe.src = cfg.src;
+        iframe.setAttribute("scrolling", "no");
+        wrap.appendChild(iframe);
+        suggestFrames.push(iframe);
+        return wrap;
+      };
+      var fallback = null;
+      var ensure = function () {
+        if (sections.querySelector(sel)) return;
+        var natives = nativeSections(sections);
+        // erst einsetzen, wenn die Zielposition existiert (sonst wandert die Reihe)
+        if (natives.length > cfg.nativeIndex) {
+          sections.insertBefore(build(), natives[cfg.nativeIndex]);
+          if (fallback) { clearTimeout(fallback); fallback = null; }
+        }
+      };
+      ensure();
+      new MutationObserver(ensure).observe(sections, { childList: true });
+      // Sicherheitsnetz: hat die Startseite weniger Zeilen als nativeIndex -> ans Ende
+      fallback = setTimeout(function () {
+        if (!sections.querySelector(sel) && nativeSections(sections).length) {
+          sections.appendChild(build());
+        }
+      }, 2000);
+    });
   }
 
   // --- Dark-Theme erzwingen (der Banner ist fuer Dark gebaut) ---
@@ -116,10 +147,10 @@
     else homeTab.insertBefore(iframe, homeTab.firstChild);
     bindVisibility(homeTab, iframe);
 
-    // Vorschlaege-Reihe einbauen, sobald .sections existiert (kann spaeter kommen)
+    // Zusatz-Reihen einbauen, sobald .sections existiert (kann spaeter kommen)
     var trySuggest = function () {
       if (!homeTab.querySelector(".sections")) return false;
-      enhanceSuggestions(homeTab);
+      enhanceRows(homeTab);
       return true;
     };
     if (!trySuggest()) {
