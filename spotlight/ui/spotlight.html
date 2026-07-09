@@ -203,38 +203,55 @@
 
 			const FIELDS = 'Overview,RunTimeTicks,UserData,OfficialRating,CommunityRating,SeriesName,SeriesId,ParentIndexNumber,IndexNumber,PlaybackPositionTicks';
 
+			// Zusammenstellung des Banner-Karussells:
+			const COUNT_CONTINUE = 5;   // Weiterschauen + naechste Folge (zusammen)
+			const COUNT_LATEST   = 2;   // neu hinzugefuegt
+			const COUNT_RANDOM   = 3;   // zufaellig & noch nicht gesehen
+
 			async function fetchItems() {
-				let items = [];
+				const out = [];
+				const seen = new Set();
+				// nimmt bis `limit` neue (noch nicht gesehene) Items aus arr auf
+				const take = (arr, source, limit) => {
+					let n = 0;
+					for (const it of (arr || [])) {
+						if (!it || seen.has(it.Id)) continue;
+						seen.add(it.Id);
+						out.push({ ...it, _source: source });
+						if (++n >= limit) break;
+					}
+				};
+
 				try {
-					const [resumeRes, nextUpRes] = await Promise.all([
-						fetch(`${base}/Users/${userId}/Items/Resume?Limit=3&Recursive=true&Fields=${FIELDS}`, { headers }),
-						fetch(`${base}/Shows/NextUp?Limit=5&UserId=${userId}&Fields=${FIELDS}`, { headers })
+					const [resumeRes, nextUpRes, latestRes, randomRes] = await Promise.all([
+						fetch(`${base}/Users/${userId}/Items/Resume?Limit=6&Recursive=true&Fields=${FIELDS}`, { headers }),
+						fetch(`${base}/Shows/NextUp?Limit=6&UserId=${userId}&Fields=${FIELDS}`, { headers }),
+						fetch(`${base}/Users/${userId}/Items/Latest?Limit=8&IncludeItemTypes=Movie,Series&Fields=${FIELDS}`, { headers }),
+						fetch(`${base}/Users/${userId}/Items?Limit=20&Recursive=true&SortBy=Random&Filters=IsUnplayed&IncludeItemTypes=Movie,Series&Fields=${FIELDS}`, { headers })
 					]);
-					const resumeData = resumeRes.ok ? await resumeRes.json() : {};
-					const nextUpData = nextUpRes.ok ? await nextUpRes.json() : {};
-					items = [
-						...(resumeData.Items || []).map(i => ({ ...i, _source: 'resume' })),
-						...(nextUpData.Items || []).map(i => ({ ...i, _source: 'nextup' }))
-					];
-					// De-duplicate by Id
-					items = items.filter((item, idx, self) => idx === self.findIndex(t => t.Id === item.Id));
+					const resume = resumeRes.ok ? (await resumeRes.json()).Items : [];
+					const nextup = nextUpRes.ok ? (await nextUpRes.json()).Items : [];
+					const latest = latestRes.ok ? await latestRes.json() : [];   // /Items/Latest liefert ein Array
+					const random = randomRes.ok ? (await randomRes.json()).Items : [];
+
+					// 1) Weiterschauen (Filme + laufende Folgen), dann naechste Folgen – zusammen bis COUNT_CONTINUE
+					take(resume, 'resume', COUNT_CONTINUE);
+					take(nextup, 'nextup', Math.max(0, COUNT_CONTINUE - out.length));
+					// 2) Neu hinzugefuegt an Filmen/Serien
+					take(Array.isArray(latest) ? latest : (latest.Items || []), 'latest', COUNT_LATEST);
+					// 3) Zufaellig & noch nicht gesehen
+					take(random, 'random', COUNT_RANDOM);
 				} catch (e) { console.error('[Abyss Spotlight] fetch error:', e); }
 
-				// Fallback: random movies/shows when queue is empty
-				if (items.length === 0) {
+				// Fallback: irgendetwas Zufaelliges, falls alles leer war
+				if (out.length === 0) {
 					try {
-						const fallbackRes = await fetch(
-							`${base}/Users/${userId}/Items?Limit=8&Recursive=true&SortBy=Random&IncludeItemTypes=Movie,Series&Fields=${FIELDS}`,
-							{ headers }
-						);
-						if (fallbackRes.ok) {
-							const d = await fallbackRes.json();
-							items = (d.Items || []).map(i => ({ ...i, _source: 'random' }));
-						}
+						const fb = await fetch(`${base}/Users/${userId}/Items?Limit=8&Recursive=true&SortBy=Random&IncludeItemTypes=Movie,Series&Fields=${FIELDS}`, { headers });
+						if (fb.ok) take((await fb.json()).Items, 'random', 8);
 					} catch (e) { console.error('[Abyss Spotlight] fallback fetch error:', e); }
 				}
 
-				return items;
+				return out;
 			}
 
 			let items = [];
@@ -476,8 +493,9 @@
 			}
 
 			// Boot
-			// Version check runs in background - never blocks the main render
-			checkForUpdate();
+			// BaerFin: Abyss-Update-Toast deaktiviert (Fork -> wuerde faelschlich auf
+			// Abyss' Installer verweisen, der unser Setup ueberschreiben wuerde).
+			// checkForUpdate();
 
 			items = await fetchItems();
 			if (!items.length) { $('empty').style.display = 'flex'; return; }
