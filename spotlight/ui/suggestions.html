@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>BaerFin Vorschlaege</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap"
+		rel="stylesheet" />
+	<style>
+		:root { --radius: 12px; }
+		* { box-sizing: border-box; }
+		html, body { margin: 0; padding: 0; background: transparent; }
+		body {
+			font-family: 'Google Sans', system-ui, sans-serif;
+			color: #f2f2f2;
+			overflow: hidden;
+		}
+		#wrap { padding: 0.2em 0 0.6em; }
+		#head {
+			display: flex; align-items: center; justify-content: space-between;
+			margin: 0 0 0.6em; padding: 0 3.3vw;
+		}
+		#title { font-size: 1.3rem; font-weight: 600; letter-spacing: .2px; }
+		#nav { display: flex; gap: .4em; }
+		.arrow {
+			width: 34px; height: 34px; border: 0; border-radius: 50%;
+			background: rgba(255,255,255,.12); color: #fff; cursor: pointer;
+			display: grid; place-items: center; transition: background .15s;
+		}
+		.arrow:hover { background: rgba(255,255,255,.24); }
+		#track {
+			display: flex; gap: 0.9em; overflow-x: auto; scroll-behavior: smooth;
+			padding: 0 3.3vw 0.4em; scroll-snap-type: x proximity;
+			scrollbar-width: none;
+		}
+		#track::-webkit-scrollbar { display: none; }
+		.card {
+			flex: 0 0 auto; width: 172px; scroll-snap-align: start; cursor: pointer;
+		}
+		@media (max-width: 700px) { .card { width: 132px; } #title { font-size: 1.1rem; } }
+		.poster {
+			position: relative; width: 100%; aspect-ratio: 2/3; border-radius: var(--radius);
+			overflow: hidden; background: #1a1a1a;
+			box-shadow: 0 6px 18px rgba(0,0,0,.45);
+			transition: transform .2s ease, box-shadow .2s ease;
+		}
+		.card:hover .poster, .card:focus-visible .poster {
+			transform: scale(1.05); box-shadow: 0 10px 26px rgba(0,0,0,.6);
+		}
+		.poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+		.poster .ph { width: 100%; height: 100%; display: grid; place-items: center; color: #555; font-size: 2rem; }
+		.label { margin: .5em .1em 0; font-size: .92rem; line-height: 1.25; }
+		.label .name { font-weight: 500; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+		.label .sub { color: #9a9a9a; font-size: .82rem; }
+	</style>
+</head>
+
+<body>
+	<div id="wrap">
+		<div id="head">
+			<div id="title">Zufällige Entdeckungen</div>
+			<div id="nav">
+				<button class="arrow" id="prev" aria-label="Zurück">
+					<svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+				</button>
+				<button class="arrow" id="next" aria-label="Weiter">
+					<svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor"><path d="m400-240-56-56 184-184-184-184 56-56 240 240-240 240Z"/></svg>
+				</button>
+			</div>
+		</div>
+		<div id="track"></div>
+	</div>
+
+	<script>
+		(async () => {
+			const $ = id => document.getElementById(id);
+
+			function getBaseUrl() {
+				try {
+					const loc = window.top.location;
+					const origin = `${loc.protocol}//${loc.host}`;
+					const match = loc.pathname.match(/^(.*?)\/web\b/);
+					return `${origin}${match ? match[1] : ''}`;
+				} catch {
+					try {
+						const c = JSON.parse(localStorage.getItem('jellyfin_credentials'));
+						const s = c?.Servers?.[0];
+						return (s?.ManualAddress || s?.LocalAddress || s?.RemoteAddress || '').replace(/\/$/, '');
+					} catch { return ''; }
+				}
+			}
+			function getAuth() {
+				try {
+					const c = JSON.parse(localStorage.getItem('jellyfin_credentials'));
+					const s = c?.Servers?.[0];
+					return { token: s?.AccessToken, userId: s?.UserId };
+				} catch { return {}; }
+			}
+			function navigateTo(route) {
+				try { window.top.location.hash = route; } catch { window.location.hash = route; }
+			}
+			function report() {
+				try {
+					parent.postMessage({ baerfinSuggest: {
+						empty: !$('track').children.length,
+						height: document.body.scrollHeight
+					} }, '*');
+				} catch {}
+			}
+
+			const base = getBaseUrl();
+			const { token, userId } = getAuth();
+			if (!token || !userId) { report(); return; }
+
+			const FIELDS = 'PrimaryImageAspectRatio,ProductionYear';
+			// Zufaellige, noch nicht gesehene Filme/Serien (wie im Banner)
+			let items = [];
+			try {
+				const res = await fetch(
+					`${base}/Users/${userId}/Items?Limit=20&Recursive=true&SortBy=Random&Filters=IsUnplayed&IncludeItemTypes=Movie,Series&ImageTypes=Primary&Fields=${FIELDS}`,
+					{ headers: { 'Authorization': `MediaBrowser Client="Jellyfin Web", Device="BaerFin Suggest", DeviceId="baerfin-suggest", Version="1.0", Token="${token}"` } }
+				);
+				if (res.ok) items = (await res.json()).Items || [];
+			} catch (e) { console.error('[BaerFin Suggest] fetch error:', e); }
+
+			const track = $('track');
+			for (const item of items) {
+				const card = document.createElement('div');
+				card.className = 'card'; card.tabIndex = 0;
+				const imgUrl = `${base}/Items/${item.Id}/Images/Primary?fillHeight=450&quality=90&api_key=${token}`;
+				card.innerHTML =
+					`<div class="poster"><img loading="lazy" alt="" src="${imgUrl}"
+						onerror="this.parentNode.innerHTML='<div class=\\'ph\\'>&#127916;</div>'"></div>` +
+					`<div class="label"><div class="name">${(item.Name || '').replace(/</g,'&lt;')}</div>` +
+					`<div class="sub">${item.Type === 'Series' ? 'Serie' : 'Film'}${item.ProductionYear ? ' · ' + item.ProductionYear : ''}</div></div>`;
+				const go = () => navigateTo(`#/details?id=${item.Id}`);
+				card.addEventListener('click', go);
+				card.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+				track.appendChild(card);
+			}
+
+			// Pfeil-Navigation
+			const scrollBy = dir => track.scrollBy({ left: dir * Math.round(track.clientWidth * 0.8), behavior: 'smooth' });
+			$('prev').addEventListener('click', () => scrollBy(-1));
+			$('next').addEventListener('click', () => scrollBy(1));
+
+			report();
+			// Nach Bild-Layout Hoehe erneut melden
+			window.addEventListener('load', report);
+			setTimeout(report, 800);
+		})();
+	</script>
+</body>
+
+</html>

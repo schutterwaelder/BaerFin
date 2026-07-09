@@ -12,6 +12,58 @@
   var STYLE_ID = "baerfin-spotlight-style";
   var FLAG = "baerfinSpotlight";
 
+  // --- Vorschlaege-Reihe (Netflix-Stil, zwischen den Home-Zeilen) ---
+  var SUGGEST_STYLE_ID = "baerfin-suggest-style";
+  var SUGGEST_INDEX = 1;        // nach welcher Home-Zeile die Reihe erscheint (0 = ganz oben)
+  var suggestFrames = [];       // iframe-Referenzen fuer Groessen/Ausblenden per postMessage
+
+  // Auto-Hoehe / Ausblenden anhand der Meldungen aus suggestions.html
+  window.addEventListener("message", function (ev) {
+    var d = ev && ev.data && ev.data.baerfinSuggest;
+    if (!d) return;
+    for (var i = 0; i < suggestFrames.length; i++) {
+      var fr = suggestFrames[i];
+      if (fr && fr.contentWindow === ev.source) {
+        if (d.empty) { if (fr.parentNode) fr.parentNode.style.display = "none"; }
+        else if (d.height) { fr.style.height = Math.max(120, d.height) + "px"; }
+      }
+    }
+  });
+
+  function injectSuggestStyleOnce() {
+    if (document.getElementById(SUGGEST_STYLE_ID)) return;
+    var s = document.createElement("style");
+    s.id = SUGGEST_STYLE_ID;
+    s.textContent =
+      ".baerfin-suggest{width:100%;margin:0.4em 0 0.8em}" +
+      ".baerfin-suggest iframe{width:100%;display:block;border:0;margin:0;padding:0;height:400px;transition:height .2s ease}";
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  // Fuegt die Vorschlaege-Reihe als Kind von .sections an Position SUGGEST_INDEX ein
+  // und stellt sie nach einem Jellyfin-Re-Render selbst wieder her (self-healing).
+  function enhanceSuggestions(homeTab) {
+    var sections = homeTab.querySelector(".sections");
+    if (!sections) return;
+    injectSuggestStyleOnce();
+    var ensure = function () {
+      if (sections.querySelector(":scope > .baerfin-suggest")) return;
+      var wrap = document.createElement("div");
+      wrap.className = "baerfin-suggest";
+      var iframe = document.createElement("iframe");
+      iframe.src = "ui/suggestions.html";
+      iframe.setAttribute("scrolling", "no");
+      wrap.appendChild(iframe);
+      suggestFrames.push(iframe);
+      var kids = sections.children;
+      var idx = Math.min(SUGGEST_INDEX, kids.length);
+      if (kids[idx]) sections.insertBefore(wrap, kids[idx]);
+      else sections.appendChild(wrap);
+    };
+    ensure();
+    new MutationObserver(ensure).observe(sections, { childList: true });
+  }
+
   // --- Dark-Theme erzwingen (der Banner ist fuer Dark gebaut) ---
   try {
     Object.keys(localStorage)
@@ -63,6 +115,17 @@
     if (sections) homeTab.insertBefore(iframe, sections);
     else homeTab.insertBefore(iframe, homeTab.firstChild);
     bindVisibility(homeTab, iframe);
+
+    // Vorschlaege-Reihe einbauen, sobald .sections existiert (kann spaeter kommen)
+    var trySuggest = function () {
+      if (!homeTab.querySelector(".sections")) return false;
+      enhanceSuggestions(homeTab);
+      return true;
+    };
+    if (!trySuggest()) {
+      var mo = new MutationObserver(function () { if (trySuggest()) mo.disconnect(); });
+      mo.observe(homeTab, { childList: true, subtree: true });
+    }
   }
 
   function scan(root) {

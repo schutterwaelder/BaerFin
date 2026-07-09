@@ -34,7 +34,7 @@ log "Web-Verzeichnis: $WEB_DIR"
 # 2) Spotlight-UI nach web/ui/ kopieren
 UI_DEST="${WEB_DIR}/ui"
 mkdir -p "$UI_DEST"
-for f in spotlight.html spotlight.css baerfin-spotlight-boot.js; do
+for f in spotlight.html spotlight.css baerfin-spotlight-boot.js suggestions.html; do
   if [ -f "${UI_SRC}/${f}" ]; then
     cp -f "${UI_SRC}/${f}" "${UI_DEST}/${f}" && log "kopiert: ui/${f}"
   else
