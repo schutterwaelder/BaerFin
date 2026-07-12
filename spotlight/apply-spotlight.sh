@@ -13,6 +13,7 @@ set -u
 SRC_DIR="${BAERFIN_SRC:-/abyss}"     # hierhin ist spotlight/ gemountet
 UI_SRC="${SRC_DIR}/ui"
 MARKER="baerfin-spotlight-boot"      # eindeutige Kennung in index.html
+BUST="2"                             # Cache-Bust-Version (mit ASSET_V in boot.js gleichhalten)
 
 log() { echo "**** [baerfin] $* ****"; }
 
@@ -42,18 +43,16 @@ for f in spotlight.html spotlight.css baerfin-spotlight-boot.js suggestions.html
   fi
 done
 
-# 3) Boot-Script in index.html einbinden (idempotent)
+# 3) Boot-Script in index.html einbinden (versioniert, selbst-aktualisierend)
 INDEX="${WEB_DIR}/index.html"
-if grep -q "$MARKER" "$INDEX" 2>/dev/null; then
-  log "index.html bereits gepatcht – ok"
+[ -f "${INDEX}.baerfin.bak" ] || cp -f "$INDEX" "${INDEX}.baerfin.bak" 2>/dev/null || true
+TAG="<script defer src=\"ui/baerfin-spotlight-boot.js?v=${BUST}\" data-${MARKER}></script>"
+# evtl. vorhandene (aeltere) BaerFin-Zeile entfernen -> dann aktuelle einsetzen
+sed -i "/data-${MARKER}/d" "$INDEX"
+if grep -q "</body>" "$INDEX"; then
+  sed -i "s#</body>#${TAG}</body>#" "$INDEX" && log "index.html gepatcht (v${BUST})"
 else
-  cp -f "$INDEX" "${INDEX}.baerfin.bak" 2>/dev/null || true
-  TAG="<script defer src=\"ui/baerfin-spotlight-boot.js\" data-${MARKER}></script>"
-  if grep -q "</body>" "$INDEX"; then
-    sed -i "s#</body>#${TAG}</body>#" "$INDEX" && log "index.html gepatcht"
-  else
-    printf '\n%s\n' "$TAG" >> "$INDEX" && log "index.html gepatcht (angehaengt)"
-  fi
+  printf '\n%s\n' "$TAG" >> "$INDEX" && log "index.html gepatcht/angehaengt (v${BUST})"
 fi
 
 log "BaerFin Spotlight angewendet"
