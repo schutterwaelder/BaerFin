@@ -13,7 +13,7 @@ set -u
 SRC_DIR="${BAERFIN_SRC:-/abyss}"     # hierhin ist spotlight/ gemountet
 UI_SRC="${SRC_DIR}/ui"
 MARKER="baerfin-spotlight-boot"      # eindeutige Kennung in index.html
-BUST="3"                             # Cache-Bust-Version (mit ASSET_V in boot.js gleichhalten)
+BUST="4"                             # Cache-Bust-Version (mit ASSET_V in boot.js gleichhalten)
 
 log() { echo "**** [baerfin] $* ****"; }
 
