@@ -43,12 +43,17 @@ for f in spotlight.html spotlight.css baerfin-spotlight-boot.js suggestions.html
   fi
 done
 
-# 3) Boot-Script in index.html einbinden (versioniert, selbst-aktualisierend)
+# 3) Boot-Script in index.html einbinden.
+# WICHTIG: Jellyfins index.html ist MINIFIZIERT (Body auf einer Zeile) -> niemals
+# zeilenweise loeschen. Stattdessen IMMER vom sauberen Backup ausgehen und den Tag
+# genau einmal per Substring vor </body> einsetzen (idempotent, versions-aktuell).
 INDEX="${WEB_DIR}/index.html"
-[ -f "${INDEX}.baerfin.bak" ] || cp -f "$INDEX" "${INDEX}.baerfin.bak" 2>/dev/null || true
+if [ -f "${INDEX}.baerfin.bak" ]; then
+  cp -f "${INDEX}.baerfin.bak" "$INDEX"                 # sauberen Stand wiederherstellen
+else
+  cp -f "$INDEX" "${INDEX}.baerfin.bak" 2>/dev/null || true   # erstes Mal: Backup anlegen
+fi
 TAG="<script defer src=\"ui/baerfin-spotlight-boot.js?v=${BUST}\" data-${MARKER}></script>"
-# evtl. vorhandene (aeltere) BaerFin-Zeile entfernen -> dann aktuelle einsetzen
-sed -i "/data-${MARKER}/d" "$INDEX"
 if grep -q "</body>" "$INDEX"; then
   sed -i "s#</body>#${TAG}</body>#" "$INDEX" && log "index.html gepatcht (v${BUST})"
 else
