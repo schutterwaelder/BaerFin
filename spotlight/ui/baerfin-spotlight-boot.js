@@ -11,7 +11,7 @@
   var IFRAME_CLASS = "featurediframe";
   var STYLE_ID = "baerfin-spotlight-style";
   var FLAG = "baerfinSpotlight";
-  var ASSET_V = "2";   // Cache-Bust: bei jeder UI-Aenderung hochzaehlen (auch in apply-spotlight.sh)
+  var ASSET_V = "3";   // Cache-Bust: bei jeder UI-Aenderung hochzaehlen (auch in apply-spotlight.sh)
   var q = function (src) { return src + (src.indexOf("?") < 0 ? "?" : "&") + "v=" + ASSET_V; };
 
   // --- Zusatz-Reihen zwischen den Home-Zeilen (Netflix-Stil) ---
