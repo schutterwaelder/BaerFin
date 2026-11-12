@@ -11,7 +11,7 @@
   var IFRAME_CLASS = "featurediframe";
   var STYLE_ID = "baerfin-spotlight-style";
   var FLAG = "baerfinSpotlight";
-  var ASSET_V = "5";   // Cache-Bust: bei jeder UI-Aenderung hochzaehlen (auch in apply-spotlight.sh)
+  var ASSET_V = "6";   // Cache-Bust: bei jeder UI-Aenderung hochzaehlen (auch in apply-spotlight.sh)
   var q = function (src) { return src + (src.indexOf("?") < 0 ? "?" : "&") + "v=" + ASSET_V; };
 
   // --- Zusatz-Reihen zwischen den Home-Zeilen (Netflix-Stil) ---
@@ -231,8 +231,61 @@
     }).observe(document.body, { childList: true, subtree: true });
     document.addEventListener("visibilitychange", scheduleSync);
     window.addEventListener("hashchange", scheduleSync);
+    window.addEventListener("hashchange", syncDashboardCss);
+    // Dashboard-Wechsel erkennt man an body.dashboardDocument
+    new MutationObserver(syncDashboardCss).observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    syncDashboardCss();
     // Sicherheitsnetz gegen veralteten SPA-Zustand (wie Abyss): alle 2 s abgleichen
-    setInterval(syncAll, 2000);
+    setInterval(function () { syncAll(); syncDashboardCss(); }, 2000);
+  }
+
+  // --- Branding-CSS auch im Admin-Dashboard ---
+  // Jellyfin 12 haengt das Benutzerdefinierte CSS (Dashboard -> Branding) nur im
+  // App-Layout ein; im Dashboard-Layout (body.dashboardDocument) fehlt es. Unter 10.x
+  // galt es ueberall -> wir haengen es im Dashboard selbst ein (Inhalt kommt live aus
+  // /Branding/Configuration, also immer dieselbe Version wie im Branding eingetragen).
+  // Respektiert die Benutzer-Einstellung "Server-CSS deaktivieren".
+  var DASH_CSS_ID = "baerfin-dashboard-css";
+  var brandingCss = null;
+  var brandingLoading = false;
+
+  function customCssDisabled() {
+    try {
+      return Object.keys(localStorage).some(function (k) {
+        return /-disableCustomCss$/.test(k) && localStorage.getItem(k) === "true";
+      });
+    } catch (e) { return false; }
+  }
+
+  function syncDashboardCss() {
+    var isDash = document.body && document.body.classList.contains("dashboardDocument");
+    var el = document.getElementById(DASH_CSS_ID);
+    if (!isDash || customCssDisabled()) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      return;
+    }
+    if (el) return;
+    if (brandingCss === null) {
+      if (brandingLoading || !window.fetch) return;
+      brandingLoading = true;
+      // index.html liegt unter <basis>/web/ -> Branding-API unter <basis>/Branding/...
+      fetch("../Branding/Configuration", { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : {}; })
+        .then(function (cfg) { brandingCss = (cfg && cfg.CustomCss) || ""; })
+        .catch(function () { brandingCss = null; })
+        .then(function () { brandingLoading = false; syncDashboardCss(); });
+      return;
+    }
+    if (!brandingCss) return;
+    var s = document.createElement("style");
+    s.id = DASH_CSS_ID;
+    s.textContent = brandingCss;
+    // ans Ende von <body>: muss NACH Jellyfins Theme-Stylesheet (<link> in #reactRoot)
+    // und den MUI-Styles stehen, sonst verlieren gleichrangige Regeln (z. B. Kachelfarben)
+    document.body.appendChild(s);
   }
 
   if (document.readyState === "loading") {

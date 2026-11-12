@@ -14,7 +14,7 @@ Zwei Schichten:
 ## Schnellstart (nur Look)
 
 ```css
-@import url("https://cdn.jsdelivr.net/gh/schutterwaelder/BaerFin@v1.5.0/theme/baerfin.css");
+@import url("https://cdn.jsdelivr.net/gh/schutterwaelder/BaerFin@v1.5.1/theme/baerfin.css");
 ```
 
 Ins Dashboard → Allgemein → Benutzerdefiniertes CSS. Farbe/Rundung anpassen im

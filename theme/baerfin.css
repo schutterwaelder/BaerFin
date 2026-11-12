@@ -2953,3 +2953,45 @@ html[data-theme="dark"] header.MuiAppBar-root>.MuiToolbar-root>.MuiStack-root:fi
     white-space: nowrap;
     flex-shrink: 0;
 }
+
+/* Admin-Dashboard (Jellyfin 12): Das Branding-CSS wird dort vom Boot-Script
+   (spotlight/ui/baerfin-spotlight-boot.js) eingehaengt, Jellyfin 12 tut es selbst nicht.
+   Das Menue ist dort fest angedockt (MuiDrawer-docked). Abyss stylt Drawer als
+   schwebendes Glas-Panel (42vw) fuer das ausklappbare Menue -> im Dashboard deckte
+   es den Inhalt zu. Hier wieder als normale 240px-Seitenleiste. */
+html[data-theme="dark"] body.dashboardDocument .MuiDrawer-docked .MuiDrawer-paper {
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 240px;
+    min-width: 0;
+    max-height: none;
+    padding: 0;
+    border-radius: 0 !important;
+    border: none !important;
+    border-right: 1px solid rgba(var(--abyss-accent), 0.08) !important;
+    box-shadow: none;
+}
+
+/* Dashboard (Jellyfin 12): feste Info-Blautoene von MUI (Aktivitaets-Icons,
+   Status-Chips) auf die neutrale Abyss-Optik bringen. */
+html[data-theme="dark"] body.dashboardDocument .MuiListItemAvatar-root .MuiAvatar-root {
+    color: rgb(var(--abyss-accent));
+    background-color: rgba(var(--abyss-accent), 0.12);
+}
+
+html[data-theme="dark"] body.dashboardDocument .MuiChip-colorInfo {
+    color: rgb(var(--abyss-accent));
+    background-color: rgba(var(--abyss-accent), 0.14);
+}
+
+/* Fortschrittsbalken-Spur (z. B. laufende Aufgaben) und Standard-Avatar oben rechts
+   (Benutzer ohne Profilbild) waren fest Jellyfin-Blau. */
+html[data-theme="dark"] .MuiLinearProgress-root.MuiLinearProgress-colorPrimary {
+    background-color: rgba(var(--abyss-accent), 0.15);
+}
+
+html[data-theme="dark"] .MuiAvatar-root.MuiAvatar-colorDefault {
+    color: rgb(var(--abyss-accent));
+    background-color: rgba(var(--abyss-accent), 0.14);
+}

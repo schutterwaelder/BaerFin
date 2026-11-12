@@ -46,7 +46,7 @@ Schicht 2 fügt den Startseiten-Banner hinzu.
 Im Jellyfin-Dashboard → **Allgemein → Benutzerdefiniertes CSS** (Version über Tag pinnen):
 
 ```css
-@import url("https://cdn.jsdelivr.net/gh/schutterwaelder/BaerFin@v1.5.0/theme/baerfin.css");
+@import url("https://cdn.jsdelivr.net/gh/schutterwaelder/BaerFin@v1.5.1/theme/baerfin.css");
 ```
 
 Danach am PC **Strg+F5**, an Handy/TV die App neu starten.
@@ -107,9 +107,12 @@ BaerFin ist **auf „Modern“ ausgelegt** — nicht auf „Legacy“ umstellen.
 - Das Boot-Script setzt die Status-Klassen, die das Abyss-CSS für Jellyfin 12 erwartet:
   `html.abyss-spotlight-visible` (Kopfleiste schwebt transparent über dem Banner) und
   `#indexPage/#homeTab.abyss-spotlight-active`.
-- **Admin-Dashboard bleibt Jellyfin-Standard:** Jellyfin 12 bindet das Benutzerdefinierte
-  CSS im Dashboard bewusst nicht ein (eigenes MUI-Theme, Einstellung „Dashboard-Design“).
-  Das ist kein Fehler des Themes.
+- **Admin-Dashboard (ab v1.5.1):** Jellyfin 12 hängt das Benutzerdefinierte CSS nur im
+  App-Layout ein, im neuen Dashboard-Layout fehlt es (unter 10.x galt es überall). Das
+  Boot-Script holt deshalb `CustomCss` aus `/Branding/Configuration` und hängt es im
+  Dashboard (`body.dashboardDocument`) selbst ans Ende von `<body>` (muss nach Jellyfins
+  Theme-Stylesheet stehen). Abschnitt 16 im CSS passt das fest angedockte Dashboard-Menü
+  und die MUI-Blautöne an. Läuft nur, wo Schicht 2 (Spotlight-Patch) aktiv ist.
 
 ## Updates nachziehen (~3× im Jahr, macht Claude)
 
