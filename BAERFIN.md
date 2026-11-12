@@ -2,7 +2,7 @@
 
 Persönlicher Jellyfin-Web-Skin auf Basis von
 [**Abyss for Jellyfin** von Om Gupta](https://github.com/AumGupta/abyss-jellyfin) (MIT).
-Ziel: ein eigenes, stabiles Theme für Nicolas' Jellyfin auf dem Synology-NAS, das auf
+Ziel: ein eigenes, stabiles Theme für Nicolas' Jellyfin auf dem Ugreen-NAS (DXP8800 Plus), das auf
 **PC-Browser, Handy und Android-TVs** (alle WebView-Clients) gut aussieht — inklusive
 des **Spotlight-Banners** auf der Startseite.
 
@@ -10,7 +10,7 @@ des **Spotlight-Banners** auf der Startseite.
 > Look besser gefällt und Abyss den Spotlight-Banner mitbringt.
 
 > Private NAS-/Deployment-Notizen liegen im Infra-Repo `VPS-und-Server-Config` unter
-> `Synology NAS (DS918+)/Jellyfin/`. Dieses Repo ist **nur der Skin** und öffentlich teilbar.
+> `Ugreen NAS (DXP8800 Plus)/jellyfin/`. Dieses Repo ist **nur der Skin** und öffentlich teilbar.
 
 ---
 
@@ -46,7 +46,7 @@ Schicht 2 fügt den Startseiten-Banner hinzu.
 Im Jellyfin-Dashboard → **Allgemein → Benutzerdefiniertes CSS** (Version über Tag pinnen):
 
 ```css
-@import url("https://cdn.jsdelivr.net/gh/schutterwaelder/BaerFin@v1.0.0/theme/baerfin.css");
+@import url("https://cdn.jsdelivr.net/gh/schutterwaelder/BaerFin@v1.5.0/theme/baerfin.css");
 ```
 
 Danach am PC **Strg+F5**, an Handy/TV die App neu starten.
@@ -60,15 +60,14 @@ Das offizielle `jellyfin/jellyfin`-Image hat **keinen** `custom-cont-init.d`-Hoo
 Deshalb läuft der Patch über einen **entrypoint-Wrapper**, der die UI patcht und
 dann Jellyfin normal startet.
 
-**Ist auf der DS918+ bereits deployed** (2026-07-09). Setup dort:
+**Ist auf dem Ugreen-NAS deployed** (seit 2026-11-11, vorher DS918+). Setup dort:
 `abyss/`-Ordner liegt neben der Compose unter `/volume1/docker/jellyfin/abyss/`,
-Compose-Projekt unter `/volume1/docker/jellyfin/compose.yaml` (Container-Manager),
+Compose-Projekt unter `/volume1/docker/jellyfin/compose.yaml`,
 Web-Dir im Container `/jellyfin/jellyfin-web`. Zum Neu-Ausrollen:
 
 1. **Spotlight-Dateien auf den Host legen** (Inhalt von `spotlight/` aus diesem Repo)
    nach `/volume1/docker/jellyfin/abyss/` — enthält danach `ui/` **und**
-   `apply-spotlight.sh`. (Synology-SSH hat kein SFTP-Subsystem → Upload via
-   `base64` über den Exec-Kanal, oder Dateien im Container Manager / File Station ablegen.)
+   `apply-spotlight.sh`. (Als root per SSH, siehe Skill `ugreen-nas`.)
 
 2. **Compose ergänzen** (`/volume1/docker/jellyfin/compose.yaml`):
    ```yaml
@@ -79,8 +78,9 @@ Web-Dir im Container `/jellyfin/jellyfin-web`. Zum Neu-Ausrollen:
          - "/volume1/docker/jellyfin/abyss:/abyss:ro"
    ```
 
-3. **Neu starten:** `docker-compose -f /volume1/docker/jellyfin/compose.yaml up -d`
-   (Synology hat `docker-compose`, nicht `docker compose`). Im Log muss
+3. **Neu starten:** `docker compose -f /volume1/docker/jellyfin/compose.yaml up -d`.
+   Nur Spotlight-Dateien geändert? Dann reicht ohne Neustart
+   `docker exec jellyfin bash /abyss/apply-spotlight.sh`. Im Log/der Ausgabe muss
    `**** [baerfin] ... angewendet ****` stehen. Rollback: `compose.yaml.baerfin.bak`
    zurückkopieren, `up -d`.
 
@@ -92,6 +92,24 @@ Web-Dir im Container `/jellyfin/jellyfin-web`. Zum Neu-Ausrollen:
 > braucht Root-Schreibrechte im Web-Verzeichnis des Containers).
 
 ---
+
+## Jellyfin 12 / Layout „Modern“ (ab v1.5.0)
+
+Jellyfin 12 nutzt standardmäßig das neue Layout **„Modern“** (MUI-Kopfleiste mit
+Bibliotheks-Pillen statt Seitenmenü; Einstellungen → Anzeige → Anzeigemodus „Auto“).
+BaerFin ist **auf „Modern“ ausgelegt** — nicht auf „Legacy“ umstellen.
+
+- `theme/baerfin.css` ist seit v1.5.0 Abyss `main` @ `2f80917` (2026-10-05, mit
+  Jellyfin-12-Support) + BaerFin-Kopf + Abschnitt **16. BAERFIN-ERGAENZUNGEN** am Ende
+  (eigene Korrekturen, z. B. einzeilige Kopfleiste bei vielen Bibliotheken).
+- Neue Variable `--abyss-accent-channel` = Akzentfarbe **mit Leerzeichen** statt Kommas
+  (für die MUI-Farben). Beim Farbwechsel beide Variablen ändern.
+- Das Boot-Script setzt die Status-Klassen, die das Abyss-CSS für Jellyfin 12 erwartet:
+  `html.abyss-spotlight-visible` (Kopfleiste schwebt transparent über dem Banner) und
+  `#indexPage/#homeTab.abyss-spotlight-active`.
+- **Admin-Dashboard bleibt Jellyfin-Standard:** Jellyfin 12 bindet das Benutzerdefinierte
+  CSS im Dashboard bewusst nicht ein (eigenes MUI-Theme, Einstellung „Dashboard-Design“).
+  Das ist kein Fehler des Themes.
 
 ## Updates nachziehen (~3× im Jahr, macht Claude)
 

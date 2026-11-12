@@ -11,7 +11,7 @@
   var IFRAME_CLASS = "featurediframe";
   var STYLE_ID = "baerfin-spotlight-style";
   var FLAG = "baerfinSpotlight";
-  var ASSET_V = "4";   // Cache-Bust: bei jeder UI-Aenderung hochzaehlen (auch in apply-spotlight.sh)
+  var ASSET_V = "5";   // Cache-Bust: bei jeder UI-Aenderung hochzaehlen (auch in apply-spotlight.sh)
   var q = function (src) { return src + (src.indexOf("?") < 0 ? "?" : "&") + "v=" + ASSET_V; };
 
   // --- Zusatz-Reihen zwischen den Home-Zeilen (Netflix-Stil) ---
@@ -114,6 +114,8 @@
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent =
+      "#indexPage.abyss-spotlight-active{padding:0 !important}" +
+      "#homeTab.abyss-spotlight-active{padding:0 !important;margin:0 !important}" +
       ".featurediframe{width:100%;display:block;border:0;margin:0;padding:0;" +
       "height:70vh;min-height:420px;max-height:680px}" +
       "@media (min-width:1400px){.featurediframe{height:72vh;max-height:760px}}" +
@@ -125,15 +127,61 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  // --- Sichtbarkeit + Status-Klassen (Jellyfin 12 / Modern-Layout) ---
+  // Das Abyss-CSS (ab Jellyfin 12) erwartet:
+  //   html.abyss-spotlight-visible   -> Banner sichtbar: MUI-AppBar schwebt transparent darueber
+  //   #indexPage/#homeTab.abyss-spotlight-active -> Banner eingebaut (Innenabstaende weg)
+  // Im Modern-Layout bleiben alte Seiten versteckt im DOM; daher pro Banner pruefen,
+  // ob seine Seite wirklich sichtbar ist (wie Abyss' spotlight-loader.js).
+  var banners = [];   // {homeTab, iframe}
+
+  function isShown(b) {
+    var tab = b.homeTab;
+    if (!tab.isConnected || !b.iframe.isConnected || document.hidden) return false;
+    if (!tab.classList.contains("is-active")) return false;
+    var page = tab.closest ? tab.closest("#indexPage") : null;
+    if (page && (page.classList.contains("hide") || page.hidden)) return false;
+    var fav = page ? page.querySelector("#favoritesTab") : null;
+    if (fav && fav.classList.contains("is-active")) return false;
+    var st = window.getComputedStyle(tab);
+    if (st.display === "none" || st.visibility === "hidden") return false;
+    return tab.offsetParent !== null || tab.getClientRects().length > 0;
+  }
+
+  function syncAll() {
+    var any = false;
+    banners = banners.filter(function (b) { return b.homeTab.isConnected; });
+    for (var i = 0; i < banners.length; i++) {
+      var b = banners[i];
+      // erst einblenden, dann messen (ein ausgeblendeter iframe aendert die Tab-Groesse nicht)
+      var on = isShown(b);
+      b.iframe.style.display = on ? "block" : "none";
+      if (on) any = true;
+    }
+    document.documentElement.classList.toggle("abyss-spotlight-visible", any);
+  }
+
+  var syncScheduled = false;
+  function scheduleSync() {
+    if (syncScheduled) return;
+    syncScheduled = true;
+    var run = function () { syncScheduled = false; syncAll(); };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(run); else setTimeout(run, 16);
+  }
+
   function bindVisibility(homeTab, iframe) {
-    var sync = function () {
-      iframe.style.display = homeTab.classList.contains("is-active") ? "block" : "none";
-    };
-    sync();
-    new MutationObserver(sync).observe(homeTab, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    banners.push({ homeTab: homeTab, iframe: iframe });
+    var page = homeTab.closest ? homeTab.closest("#indexPage") : null;
+    if (page) page.classList.add("abyss-spotlight-active");
+    homeTab.classList.add("abyss-spotlight-active");
+    var mo = new MutationObserver(scheduleSync);
+    mo.observe(homeTab, { attributes: true, attributeFilter: ["class", "style"] });
+    // Seiten-/Routenwechsel: Klassen der Vorfahren (#indexPage .hide, MUI-Container) beobachten
+    for (var el = homeTab.parentElement; el; el = el.parentElement) {
+      mo.observe(el, { attributes: true, attributeFilter: ["class", "hidden", "style"] });
+      if (el === document.body) break;
+    }
+    syncAll();
   }
 
   // Fuegt den Banner-iframe oben in einen Home-Tab ein (einmal pro Tab-Instanz).
@@ -181,6 +229,10 @@
         }
       }
     }).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("visibilitychange", scheduleSync);
+    window.addEventListener("hashchange", scheduleSync);
+    // Sicherheitsnetz gegen veralteten SPA-Zustand (wie Abyss): alle 2 s abgleichen
+    setInterval(syncAll, 2000);
   }
 
   if (document.readyState === "loading") {
